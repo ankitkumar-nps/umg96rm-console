@@ -1,0 +1,358 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<title>UMG 96RM-PN Gateway Console</title>
+<style>
+  :root{
+    --bg:#0d1117; --panel:#161b22; --line:#30363d; --fg:#e6edf3; --dim:#8b949e;
+    --accent:#58a6ff; --ok:#3fb950; --warn:#d29922; --bad:#f85149;
+    --mono:ui-monospace,SFMono-Regular,"SF Mono",Menlo,Consolas,monospace;
+    padding-top:env(safe-area-inset-top,0px); padding-bottom:env(safe-area-inset-bottom,0px);
+  }
+  *{box-sizing:border-box}
+  body{margin:0;background:var(--bg);color:var(--fg);
+       font:14px/1.5 system-ui,-apple-system,Segoe UI,sans-serif;padding:0 16px 32px}
+  header{display:flex;flex-wrap:wrap;gap:8px;align-items:baseline;
+         padding:16px 0 12px;border-bottom:1px solid var(--line);margin-bottom:16px}
+  h1{font-size:17px;margin:0;font-weight:600;letter-spacing:-.01em}
+  .sub{color:var(--dim);font-size:12px}
+  .grow{flex:1}
+  fieldset{border:1px solid var(--line);border-radius:8px;background:var(--panel);
+           margin:0 0 14px;padding:12px}
+  legend{color:var(--accent);font-size:12px;font-weight:600;padding:0 6px;
+         text-transform:uppercase;letter-spacing:.06em}
+  .row{display:flex;flex-wrap:wrap;gap:8px;align-items:center}
+  label{color:var(--dim);font-size:12px;min-width:64px}
+  input,select{background:#010409;color:var(--fg);border:1px solid var(--line);
+    border-radius:6px;padding:7px 9px;font:13px var(--mono);min-width:0;flex:1 1 140px}
+  input:focus,select:focus{outline:2px solid var(--accent);outline-offset:-1px}
+  button{background:#21262d;color:var(--fg);border:1px solid var(--line);border-radius:6px;
+    padding:7px 12px;font:13px/1 system-ui,sans-serif;cursor:pointer;white-space:nowrap}
+  button:hover:not(:disabled){border-color:var(--accent);color:var(--accent)}
+  button:disabled{opacity:.4;cursor:not-allowed}
+  button.go{background:#238636;border-color:#2ea043;color:#fff}
+  button.go:hover:not(:disabled){background:#2ea043;color:#fff}
+  pre{background:#010409;border:1px solid var(--line);border-radius:6px;padding:10px;
+      margin:10px 0 0;min-height:200px;max-height:48vh;overflow:auto;
+      white-space:pre-wrap;word-break:break-word;font:12px/1.45 var(--mono)}
+  .cards{display:grid;grid-template-columns:repeat(auto-fill,minmax(130px,1fr));gap:8px}
+  .card{background:#010409;border:1px solid var(--line);border-radius:6px;padding:8px 10px}
+  .card .k{color:var(--dim);font-size:11px;text-transform:uppercase;letter-spacing:.05em}
+  .card .v{font:15px var(--mono);margin-top:2px;overflow-wrap:anywhere}
+  table{width:100%;border-collapse:collapse;font:13px var(--mono)}
+  th,td{text-align:left;padding:5px 8px;border-bottom:1px solid var(--line)}
+  th{color:var(--dim);font-weight:500;font-size:11px;text-transform:uppercase}
+  td.n{text-align:right}
+  .pill{display:inline-block;padding:2px 8px;border-radius:99px;font-size:11px;
+        font-weight:600;border:1px solid}
+  .pill.ok{color:var(--ok);border-color:var(--ok)}
+  .pill.bad{color:var(--bad);border-color:var(--bad)}
+  .pill.warn{color:var(--warn);border-color:var(--warn)}
+  .msg{font-size:12px;color:var(--dim)}
+  .msg.err{color:var(--bad)}
+  .btns{display:flex;flex-wrap:wrap;gap:6px;margin-top:8px}
+  .hint{color:var(--dim);font-size:12px;margin:8px 0 0}
+  [hidden]{display:none!important}
+  @media (max-width:520px){ label{min-width:100%} .sub{width:100%} }
+</style>
+</head>
+<body>
+
+<header>
+  <h1>UMG 96RM-PN Gateway</h1>
+  <span class="sub">XIAO ESP32-C3 &middot; Modbus RTU &middot; remote console over ThingsBoard RPC</span>
+  <span class="grow"></span>
+  <span id="authPill" class="pill bad">signed out</span>
+</header>
+
+<fieldset id="loginBox">
+  <legend>connect</legend>
+  <div class="row">
+    <label for="host">server</label>
+    <input id="host" placeholder="https://iot.example.com" autocomplete="off">
+  </div>
+  <div class="row" style="margin-top:8px">
+    <label for="user">user</label>
+    <input id="user" type="email" placeholder="you@company.com" autocomplete="username">
+    <label for="pass">password</label>
+    <input id="pass" type="password" autocomplete="current-password">
+    <button class="go" id="loginBtn">sign in</button>
+  </div>
+  <p class="hint">
+    Your ThingsBoard login goes straight from this page to your own server over HTTPS.
+    The session token is kept in this tab only (<code>sessionStorage</code>) and is gone when you close it.
+    Nothing is stored on GitHub.
+  </p>
+  <p id="loginMsg" class="msg"></p>
+</fieldset>
+
+<fieldset id="deviceBox" hidden>
+  <legend>device</legend>
+  <div class="row">
+    <label for="dev">gateway</label>
+    <select id="dev"></select>
+    <button id="reloadDevs">reload</button>
+    <button id="logout">sign out</button>
+  </div>
+  <div class="cards" id="cards" style="margin-top:12px"></div>
+</fieldset>
+
+<fieldset id="consoleBox" hidden>
+  <legend>console (RPC)</legend>
+  <div class="row">
+    <input id="cmd" placeholder="status / loopback / sniff 10 / scan / read 19006 6 / poll 1"
+           autocomplete="off" spellcheck="false" style="flex:1 1 260px">
+    <button class="go" id="runBtn">run</button>
+  </div>
+  <div class="btns">
+    <button data-cmd="status">status</button>
+    <button data-cmd="loopback">loopback</button>
+    <button data-cmd="sniff 15">sniff 15</button>
+    <button data-cmd="scan">scan</button>
+    <button data-cmd="read 19006 6">read L-L</button>
+    <button data-cmd="probe">probe</button>
+    <button data-cmd="poll 1">poll on</button>
+    <button data-cmd="poll 0">poll off</button>
+    <button data-cmd="save">save</button>
+    <button id="logsBtn">fetch device log</button>
+  </div>
+  <pre id="out">Sign in, pick a gateway, then run a command.
+
+Suggested order on a fresh install:
+  1  loopback      jumper D0-D1, module unplugged   -> proves UART + pins + chip
+  2  sniff 15      listens only                     -> silence vs wrong baud vs another master
+  3  scan          baud x framing x slave id        -> an exception counts as success
+  4  read 19006 6  the three L-L voltages           -> look for 451 / 449 / 447
+  5  poll 1        start publishing</pre>
+  <p class="hint">
+    <code>scan</code> can take ~80 s and <code>sniff</code> runs for its full window &mdash; the RPC
+    reply arrives when the sweep finishes. The device stays responsive throughout.
+  </p>
+</fieldset>
+
+<fieldset id="teleBox" hidden>
+  <legend>latest readings</legend>
+  <div class="row">
+    <button id="refreshTele">refresh</button>
+    <label style="min-width:auto"><input type="checkbox" id="auto" style="flex:0"> auto every 10 s</label>
+    <span class="grow"></span>
+    <span class="msg" id="teleAge"></span>
+  </div>
+  <table style="margin-top:10px">
+    <thead><tr><th>key</th><th>value</th><th>unit</th><th>expected</th></tr></thead>
+    <tbody id="teleBody"><tr><td colspan="4" class="msg">nothing yet</td></tr></tbody>
+  </table>
+</fieldset>
+
+<script>
+const $ = id => document.getElementById(id);
+const LS = window.localStorage, SS = window.sessionStorage;
+
+const KEYS = [
+  ['v_l1n','V L1-N','V',''], ['v_l2n','V L2-N','V',''], ['v_l3n','V L3-N','V',''],
+  ['v_l12','V L1-L2','V','~451'], ['v_l23','V L2-L3','V','~449'], ['v_l13','V L1-L3','V','~447'],
+  ['i_l1','I L1','A',''], ['i_l2','I L2','A',''], ['i_l3','I L3','A',''],
+  ['i_sum','I vector sum','A',''],
+  ['p_l1','P L1','W',''], ['p_l2','P L2','W',''], ['p_l3','P L3','W',''],
+  ['p_sum','P sum','W',''], ['s_l1','S L1','VA','']
+];
+
+let jwt = SS.getItem('tb_jwt') || '';
+let devices = [], devId = '', autoTimer = null;
+
+const host = () => ($('host').value || '').replace(/\/+$/, '');
+
+function setAuth(ok){
+  $('authPill').textContent = ok ? 'signed in' : 'signed out';
+  $('authPill').className = 'pill ' + (ok ? 'ok' : 'bad');
+  $('loginBox').hidden = ok;
+  $('deviceBox').hidden = !ok;
+  $('consoleBox').hidden = !ok;
+  $('teleBox').hidden = !ok;
+}
+
+async function api(path, opts={}){
+  const r = await fetch(host() + path, {
+    ...opts,
+    headers: { 'Content-Type':'application/json',
+               ...(jwt ? {'X-Authorization':'Bearer ' + jwt} : {}),
+               ...(opts.headers||{}) }
+  });
+  if (r.status === 401){ jwt=''; SS.removeItem('tb_jwt'); setAuth(false);
+    throw new Error('session expired - sign in again'); }
+  const text = await r.text();
+  let body; try { body = text ? JSON.parse(text) : null; } catch { body = text; }
+  if (!r.ok) throw new Error((body && (body.message||body.errorCode)) || ('HTTP ' + r.status));
+  return body;
+}
+
+$('loginBtn').addEventListener('click', async () => {
+  const msg = $('loginMsg'); msg.className='msg'; msg.textContent='signing in...';
+  if (!host()){ msg.className='msg err'; msg.textContent='enter the server URL first'; return; }
+  LS.setItem('tb_host', host());
+  LS.setItem('tb_user', $('user').value);
+  try {
+    const r = await api('/api/auth/login', { method:'POST',
+      body: JSON.stringify({ username:$('user').value, password:$('pass').value }) });
+    jwt = r.token; SS.setItem('tb_jwt', jwt);
+    $('pass').value = '';
+    msg.textContent = '';
+    setAuth(true);
+    await loadDevices();
+  } catch(e){ msg.className='msg err'; msg.textContent = 'login failed: ' + e.message; }
+});
+
+$('logout').addEventListener('click', () => {
+  jwt=''; SS.removeItem('tb_jwt'); setAuth(false); stopAuto();
+});
+
+async function loadDevices(){
+  try {
+    const r = await api('/api/tenant/deviceInfos?pageSize=200&page=0&sortProperty=name&sortOrder=ASC');
+    devices = (r && r.data) || [];
+    const sel = $('dev');
+    sel.innerHTML = '';
+    const pref = LS.getItem('tb_dev');
+    devices.forEach(d => {
+      const o = document.createElement('option');
+      o.value = d.id.id;
+      o.textContent = d.name + (d.type ? '  (' + d.type + ')' : '');
+      sel.appendChild(o);
+    });
+    if (pref && devices.some(d => d.id.id === pref)) sel.value = pref;
+    devId = sel.value || '';
+    if (devId) { LS.setItem('tb_dev', devId); refreshCards(); refreshTele(); }
+  } catch(e){ $('out').textContent = 'could not list devices: ' + e.message; }
+}
+
+$('reloadDevs').addEventListener('click', loadDevices);
+$('dev').addEventListener('change', e => {
+  devId = e.target.value; LS.setItem('tb_dev', devId);
+  refreshCards(); refreshTele();
+});
+
+function card(k, v, cls){
+  return '<div class="card"><div class="k">' + k + '</div><div class="v"' +
+         (cls ? ' style="color:var(--' + cls + ')"' : '') + '>' + v + '</div></div>';
+}
+
+async function refreshCards(){
+  if (!devId) return;
+  try {
+    const attrs = await api('/api/plugins/telemetry/DEVICE/' + devId + '/values/attributes/CLIENT_SCOPE');
+    const ts = await api('/api/plugins/telemetry/DEVICE/' + devId +
+      '/values/timeseries?keys=status,ip,rssi,uptime_s,free_mem,fw,mb_ok,mb_timeout');
+    const a = {}; (attrs||[]).forEach(x => a[x.key] = x.value);
+    const t = {}; Object.keys(ts||{}).forEach(k => t[k] = ts[k][0] && ts[k][0].value);
+    const last = ts && ts.status && ts.status[0] ? ts.status[0].ts : 0;
+    const ageS = last ? Math.round((Date.now() - last)/1000) : null;
+    const live = ageS !== null && ageS < 120;
+    let h = '';
+    h += card('link', live ? 'online' : (ageS===null ? 'no data' : 'stale ' + ageS + 's'),
+              live ? 'ok' : 'bad');
+    h += card('ip', t.ip || a.ip || '-');
+    h += card('portal', (a.portal_url ? '<a style="color:var(--accent)" href="' + a.portal_url +
+              '" target="_blank" rel="noopener">open</a>' : '-'));
+    h += card('ap ssid', a.ap_ssid || '-');
+    h += card('firmware', t.fw || a.fw || '-');
+    h += card('rssi', t.rssi !== undefined ? t.rssi + ' dBm' : '-');
+    h += card('uptime', t.uptime_s !== undefined ? fmtUp(t.uptime_s) : '-');
+    h += card('modbus ok', t.mb_ok !== undefined ? t.mb_ok : '-', 'ok');
+    h += card('modbus timeout', t.mb_timeout !== undefined ? t.mb_timeout : '-',
+              (+t.mb_timeout > 0 ? 'bad' : ''));
+    h += card('free heap', t.free_mem !== undefined ? Math.round(t.free_mem/1024) + ' KB' : '-');
+    $('cards').innerHTML = h;
+  } catch(e){ $('cards').innerHTML = '<p class="msg err">' + e.message + '</p>'; }
+}
+
+function fmtUp(s){
+  s = +s; const d = Math.floor(s/86400), h = Math.floor(s%86400/3600), m = Math.floor(s%3600/60);
+  return d ? d+'d '+h+'h' : h ? h+'h '+m+'m' : m+'m';
+}
+
+async function refreshTele(){
+  if (!devId) return;
+  try {
+    const keys = KEYS.map(k => k[0]).join(',');
+    const ts = await api('/api/plugins/telemetry/DEVICE/' + devId + '/values/timeseries?keys=' + keys);
+    const body = $('teleBody');
+    let newest = 0, rows = '';
+    KEYS.forEach(([k, label, unit, exp]) => {
+      const e = ts && ts[k] && ts[k][0];
+      if (e && e.ts > newest) newest = e.ts;
+      const v = e ? (+e.value).toFixed(2) : '&mdash;';
+      let cls = '';
+      if (e && exp){
+        const want = +exp.replace('~',''), got = +e.value;
+        cls = Math.abs(got - want) <= want*0.10 ? 'ok' : 'bad';
+      }
+      rows += '<tr><td>' + label + '</td><td class="n"' +
+              (cls ? ' style="color:var(--' + cls + ')"' : '') + '>' + v + '</td><td>' +
+              unit + '</td><td class="msg">' + (exp||'') + '</td></tr>';
+    });
+    body.innerHTML = rows || '<tr><td colspan="4" class="msg">nothing yet</td></tr>';
+    $('teleAge').textContent = newest
+      ? 'last reading ' + Math.round((Date.now()-newest)/1000) + 's ago'
+      : 'no meter readings published yet';
+  } catch(e){ $('teleAge').textContent = e.message; }
+}
+
+$('refreshTele').addEventListener('click', () => { refreshTele(); refreshCards(); });
+$('auto').addEventListener('change', e => e.target.checked ? startAuto() : stopAuto());
+function startAuto(){ stopAuto(); autoTimer = setInterval(()=>{refreshTele();refreshCards();}, 10000); }
+function stopAuto(){ if (autoTimer) clearInterval(autoTimer); autoTimer = null; $('auto').checked = false; }
+
+async function rpc(method, params){
+  if (!devId) throw new Error('pick a gateway first');
+  return api('/api/plugins/rpc/twoway/' + devId, {
+    method:'POST',
+    body: JSON.stringify({ method, params: params || {}, timeout: 120000, persistent:false })
+  });
+}
+
+function append(text){
+  const o = $('out');
+  const atBottom = o.scrollTop + o.clientHeight >= o.scrollHeight - 30;
+  o.textContent += text;
+  if (atBottom) o.scrollTop = o.scrollHeight;
+}
+
+async function run(cmdline){
+  if (!cmdline) return;
+  const btns = document.querySelectorAll('button');
+  btns.forEach(b => b.disabled = true);
+  append('\n$ ' + cmdline + '\n');
+  try {
+    const r = await rpc('console', { cmd: cmdline });
+    if (r && typeof r === 'object' && 'out' in r) append(r.out);
+    else append(typeof r === 'string' ? r : JSON.stringify(r, null, 2));
+    if (/^(poll|read|probe)/.test(cmdline)) { refreshTele(); refreshCards(); }
+  } catch(e){
+    append('!! ' + e.message +
+      '\n   device offline, or it is mid-sweep and the reply timed out.\n');
+  } finally {
+    btns.forEach(b => b.disabled = false);
+    $('cmd').focus();
+  }
+}
+
+$('runBtn').addEventListener('click', () => run($('cmd').value.trim()));
+$('cmd').addEventListener('keydown', e => { if (e.key === 'Enter') run($('cmd').value.trim()); });
+document.querySelectorAll('button[data-cmd]').forEach(b =>
+  b.addEventListener('click', () => { $('cmd').value = b.dataset.cmd; run(b.dataset.cmd); }));
+$('logsBtn').addEventListener('click', async () => {
+  append('\n$ get_logs\n');
+  try { const r = await rpc('get_logs', {}); append((r && r.out) || JSON.stringify(r)); }
+  catch(e){ append('!! ' + e.message + '\n'); }
+});
+
+/* restore */
+$('host').value = LS.getItem('tb_host') || '';
+$('user').value = LS.getItem('tb_user') || '';
+setAuth(!!jwt);
+if (jwt) loadDevices();
+</script>
+</body>
+</html>
